@@ -21,6 +21,8 @@ namespace NLog.Targets.Http
     // ReSharper disable once InconsistentNaming
     public class HTTP : TargetWithLayout
     {
+        private const int HttpErrorRetryTimeout = 500;
+
         private static readonly Dictionary<string, HttpMethod> AvailableHttpMethods = new Dictionary<string, HttpMethod>
             {{"post", HttpMethod.Post}, {"get", HttpMethod.Get}};
 
@@ -28,12 +30,14 @@ namespace NLog.Targets.Http
         private readonly ConcurrentStack<string> _propertiesChanged = new ConcurrentStack<string>();
         private readonly ConcurrentQueue<StrongBox<byte[]>> _taskQueue = new ConcurrentQueue<StrongBox<byte[]>>();
         private readonly CancellationTokenSource _terminateProcessor = new CancellationTokenSource();
+        private CancellationTokenSource _flushToken = new CancellationTokenSource();
         private string _accept = "application/json";
         private string _authorization;
 
         private int _batchSize = 1;
         private int _connectTimeout = 30000;
         private bool _expect100Continue = ServicePointManager.Expect100Continue;
+        private bool hasFlushed;
 #if NETCORE30
         private SocketsHttpHandler _handler;
 #elif NETSTANDARD21
@@ -43,12 +47,15 @@ namespace NLog.Targets.Http
 #endif
         private HttpClient _httpClient;
         private bool _ignoreSslErrors = true;
+        private bool hasHttpError;
 
         private int _maxQueueSize = int.MaxValue;
         private string _proxyPassword = string.Empty;
         private string _proxyUrl = string.Empty;
         private string _proxyUser = string.Empty;
         private string _url;
+
+        public static event EventHandler<FlushErrorEventArgs> FlushError;
 
         /// <summary>
         ///     URL to Post to
@@ -192,11 +199,18 @@ namespace NLog.Targets.Http
                     var stack = new List<StrongBox<byte[]>>();
                     while (!_terminateProcessor.IsCancellationRequested)
                     {
+                        hasFlushed = false;
                         var counter = 0;
                         sb.Clear();
                         stack.Clear();
+                        var flushToken = _flushToken.Token;
                         while (!_taskQueue.IsEmpty)
                         {
+                            if (hasHttpError)
+                            {
+                                flushToken.WaitHandle.WaitOne(HttpErrorRetryTimeout);
+                            }
+
                             if (_taskQueue.TryDequeue(out var message))
                             {
                                 ++counter;
@@ -210,7 +224,7 @@ namespace NLog.Targets.Http
                                 message = null; //needed to reduce stress on memory 
                             }
 
-                            if (counter == BatchSize)
+                            if (counter == BatchSize && !_flushToken.IsCancellationRequested)
                             {
                                 ProcessChunk(sb, stack);
                                 sb.Clear();
@@ -220,7 +234,23 @@ namespace NLog.Targets.Http
                         }
 
                         if (sb.Length > 0)
-                            ProcessChunk(sb, stack);
+                        {
+                            if (_flushToken.IsCancellationRequested && hasHttpError)
+                            {
+                                _conversationActiveFlag.Wait(_terminateProcessor.Token);
+                                FlushError?.Invoke(this, new FlushErrorEventArgs(sb.ToString()));
+                                hasFlushed = true;
+                                _conversationActiveFlag.Release();
+                            }
+                            else
+                            {
+                                ProcessChunk(sb, stack);
+                            }
+                        }
+                        else
+                        {
+                            hasFlushed = true;
+                        }
                         Thread.Sleep(1);
                     }
                 }, _terminateProcessor.Token, TaskCreationOptions.None,
@@ -247,7 +277,11 @@ namespace NLog.Targets.Http
             // If there are messages to be processed
             // or no flags available 
             // just wait
-            while (!_taskQueue.IsEmpty || _conversationActiveFlag.CurrentCount == 0) Thread.Sleep(1);
+            _flushToken.Cancel(false);
+            while (!hasFlushed || !_taskQueue.IsEmpty || _conversationActiveFlag.CurrentCount == 0) Thread.Sleep(1);
+            _flushToken.Dispose();
+            hasFlushed = false;
+            _flushToken = new CancellationTokenSource();
         }
 
         protected override void Write(LogEventInfo logEvent)
@@ -287,15 +321,26 @@ namespace NLog.Targets.Http
                     Content = new StringContent(message, Encoding.UTF8, ContentType)
                 };
 
-                return _httpClient.SendAsync(request).ContinueWith(responseTask =>
+                var isSuccess = _httpClient.SendAsync(request).ContinueWith(responseTask =>
                 {
                     var httpResponseMessage = responseTask.Result;
                     return httpResponseMessage.IsSuccessStatusCode;
-                }).Result;
+                }).GetAwaiter().GetResult();
+                hasHttpError = !isSuccess;
+                return isSuccess;
             }
             catch (WebException wex)
             {
                 InternalLogger.Warn(wex, "Failed to communicate over HTTP");
+                hasHttpError = true;
+                return false;
+            }
+            catch (AggregateException aex)
+            {
+                if (aex.InnerException is HttpRequestException httpEx)
+                {
+                    hasHttpError = true;
+                }
                 return false;
             }
             catch (Exception ex)
@@ -336,7 +381,7 @@ namespace NLog.Targets.Http
 #if NETCORE30
                     _handler = new SocketsHttpHandler();
 #elif NETSTANDARD21
-                    _handler = new HttpClientHandler();
+                _handler = new HttpClientHandler();
 #else
                 _handler = new WebRequestHandler();
 #endif
@@ -380,5 +425,15 @@ namespace NLog.Targets.Http
                 _propertiesChanged.Clear();
             }
         }
+    }
+
+    public class FlushErrorEventArgs : EventArgs
+    {
+        public FlushErrorEventArgs(string failedMessage)
+        {
+            FailedMessage = failedMessage;
+        }
+
+        public string FailedMessage { get; set; }
     }
 }
