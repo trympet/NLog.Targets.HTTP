@@ -30,7 +30,7 @@ namespace NLog.Targets.Http
         private readonly ConcurrentStack<string> _propertiesChanged = new ConcurrentStack<string>();
         private readonly ConcurrentQueue<StrongBox<byte[]>> _taskQueue = new ConcurrentQueue<StrongBox<byte[]>>();
         private readonly CancellationTokenSource _terminateProcessor = new CancellationTokenSource();
-        private CancellationTokenSource _flushToken = new CancellationTokenSource();
+        private CancellationTokenSource _flushTokenSource = new CancellationTokenSource();
         private string _accept = "application/json";
         private string _authorization;
 
@@ -202,7 +202,7 @@ namespace NLog.Targets.Http
                         var counter = 0;
                         sb.Clear();
                         stack.Clear();
-                        var flushToken = _flushToken.Token;
+                        var flushToken = _flushTokenSource.Token;
                         while (!_taskQueue.IsEmpty)
                         {
                             if (hasHttpError)
@@ -223,7 +223,7 @@ namespace NLog.Targets.Http
                                 message = null; //needed to reduce stress on memory 
                             }
 
-                            if (counter == BatchSize && !_flushToken.IsCancellationRequested)
+                            if (counter == BatchSize && !flushToken.IsCancellationRequested)
                             {
                                 ProcessChunk(sb, stack);
                                 sb.Clear();
@@ -234,7 +234,7 @@ namespace NLog.Targets.Http
 
                         if (sb.Length > 0)
                         {
-                            if (_flushToken.IsCancellationRequested && hasHttpError)
+                            if (flushToken.IsCancellationRequested && hasHttpError)
                             {
                                 _conversationActiveFlag.Wait(_terminateProcessor.Token);
                                 FlushError?.Invoke(this, new FlushErrorEventArgs(sb.ToString()));
@@ -276,11 +276,11 @@ namespace NLog.Targets.Http
             // If there are messages to be processed
             // or no flags available 
             // just wait
-            _flushToken.Cancel(false);
+            _flushTokenSource.Cancel(false);
             while (!hasFlushed || !_taskQueue.IsEmpty || _conversationActiveFlag.CurrentCount == 0) Thread.Sleep(1);
-            _flushToken.Dispose();
+            _flushTokenSource.Dispose();
             hasFlushed = false;
-            _flushToken = new CancellationTokenSource();
+            _flushTokenSource = new CancellationTokenSource();
         }
 
         protected override void Write(LogEventInfo logEvent)
@@ -387,7 +387,8 @@ namespace NLog.Targets.Http
                 _handler.UseProxy = !string.IsNullOrWhiteSpace(ProxyUrl);
                 _httpClient = new HttpClient(_handler)
                 {
-                    BaseAddress = new Uri(Url), Timeout = TimeSpan.FromMilliseconds(ConnectTimeout)
+                    BaseAddress = new Uri(Url),
+                    Timeout = TimeSpan.FromMilliseconds(ConnectTimeout)
                 };
                 _httpClient.DefaultRequestHeaders.ConnectionClose = true;
 
@@ -399,14 +400,14 @@ namespace NLog.Targets.Http
                 {
                     var useDefaultCredentials = string.IsNullOrWhiteSpace(ProxyUser);
                     _handler.Proxy = new WebProxy(new Uri(ProxyUrl))
-                        {UseDefaultCredentials = useDefaultCredentials};
+                    { UseDefaultCredentials = useDefaultCredentials };
                     if (!useDefaultCredentials)
                     {
                         var cred = ProxyUser.Split('\\');
                         _handler.Proxy.Credentials = cred.Length == 1
-                            ? new NetworkCredential {UserName = ProxyUser, Password = ProxyPassword}
+                            ? new NetworkCredential { UserName = ProxyUser, Password = ProxyPassword }
                             : new NetworkCredential
-                                {Domain = cred[0], UserName = cred[1], Password = ProxyPassword};
+                            { Domain = cred[0], UserName = cred[1], Password = ProxyPassword };
                     }
                 }
 
@@ -417,7 +418,7 @@ namespace NLog.Targets.Http
                         _handler.SslOptions = new SslClientAuthenticationOptions{RemoteCertificateValidationCallback =
  (sender, certificate, chain, errors) => true};
 #elif NETSTANDARD21
-                        _handler.ServerCertificateCustomValidationCallback = (message,certificate,chain,errors)=>true;
+                    _handler.ServerCertificateCustomValidationCallback = (message, certificate, chain, errors) => true;
 #else
                     _handler.ServerCertificateValidationCallback = (sender, certificate, chain, errors) => true;
 #endif
