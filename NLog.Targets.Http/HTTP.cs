@@ -199,7 +199,6 @@ namespace NLog.Targets.Http
                     var stack = new List<StrongBox<byte[]>>();
                     while (!_terminateProcessor.IsCancellationRequested)
                     {
-                        hasFlushed = false;
                         var counter = 0;
                         sb.Clear();
                         stack.Clear();
