@@ -11,6 +11,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using NLog.Common;
 using NLog.Config;
+using System.Diagnostics;
 #if (NETCORE30 || NETSTANDARD21)
 using System.Net.Security;
 #endif
@@ -30,6 +31,7 @@ namespace NLog.Targets.Http
         private readonly ConcurrentStack<string> _propertiesChanged = new ConcurrentStack<string>();
         private readonly ConcurrentQueue<StrongBox<byte[]>> _taskQueue = new ConcurrentQueue<StrongBox<byte[]>>();
         private readonly CancellationTokenSource _terminateProcessor = new CancellationTokenSource();
+        private readonly StringBuilder builder = new StringBuilder();
         private CancellationTokenSource _flushTokenSource = new CancellationTokenSource();
         private string _accept = "application/json";
         private string _authorization;
@@ -37,7 +39,6 @@ namespace NLog.Targets.Http
         private int _batchSize = 1;
         private int _connectTimeout = 30000;
         private bool _expect100Continue = ServicePointManager.Expect100Continue;
-        private bool hasFlushed;
 #if NETCORE30
         private SocketsHttpHandler _handler;
 #elif NETSTANDARD21
@@ -193,68 +194,78 @@ namespace NLog.Targets.Http
         protected override void InitializeTarget()
         {
             base.InitializeTarget();
-            var task = Task.Factory.StartNew(() =>
+            var token = _terminateProcessor.Token;
+            var task = Task.Run(() => Start(token), token);
+        }
+
+        private async Task Start(CancellationToken cancellationToken)
+        {
+            var stack = new List<StrongBox<byte[]>>();
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                builder.Clear();
+                stack.Clear();
+                var flushToken = _flushTokenSource.Token;
+                BuildChunk(stack, flushToken);
+
+                if (builder.Length > 0)
                 {
-                    var sb = new StringBuilder();
-                    var stack = new List<StrongBox<byte[]>>();
-                    while (!_terminateProcessor.IsCancellationRequested)
+                    if (flushToken.IsCancellationRequested && hasHttpError)
                     {
-                        var counter = 0;
-                        sb.Clear();
-                        stack.Clear();
-                        var flushToken = _flushTokenSource.Token;
-                        while (!_taskQueue.IsEmpty)
+                        try
                         {
-                            if (hasHttpError)
-                            {
-                                flushToken.WaitHandle.WaitOne(HttpErrorRetryTimeout);
-                            }
-
-                            if (_taskQueue.TryDequeue(out var message))
-                            {
-                                ++counter;
-                                sb.AppendLine(InMemoryCompression
-                                    ? Utility.Unzip(message.Value)
-                                    : Encoding.UTF8.GetString(message.Value));
-                                stack.Add(message);
-                                if (!_taskQueue.IsEmpty)
-                                    sb.AppendLine();
-                                // ReSharper disable once RedundantAssignment
-                                message = null; //needed to reduce stress on memory 
-                            }
-
-                            if (counter == BatchSize && !flushToken.IsCancellationRequested)
-                            {
-                                ProcessChunk(sb, stack);
-                                sb.Clear();
-                                stack.Clear();
-                                counter = 0;
-                            }
+                            _conversationActiveFlag.Wait(_terminateProcessor.Token);
+                            var delay = Task.Delay(1);
+                            FlushError?.Invoke(this, new FlushErrorEventArgs(builder.ToString()));
+                            await delay; // ensure conversation stays active for at least 1ms.
                         }
-
-                        if (sb.Length > 0)
+                        finally
                         {
-                            if (flushToken.IsCancellationRequested && hasHttpError)
-                            {
-                                _conversationActiveFlag.Wait(_terminateProcessor.Token);
-                                FlushError?.Invoke(this, new FlushErrorEventArgs(sb.ToString()));
-                                hasFlushed = true;
-                                _conversationActiveFlag.Release();
-                            }
-                            else
-                            {
-                                ProcessChunk(sb, stack);
-                            }
+                            _conversationActiveFlag.Release();
                         }
-                        else
-                        {
-                            hasFlushed = true;
-                        }
-                        Thread.Sleep(1);
                     }
-                }, _terminateProcessor.Token, TaskCreationOptions.None,
-                TaskScheduler.Default);
-            while (task.Status != TaskStatus.Running) Thread.Sleep(1);
+                    else
+                    {
+                        ProcessChunk(builder, stack);
+
+                        if (hasHttpError)
+                        {
+                            try
+                            {
+                                await Task.Delay(HttpErrorRetryTimeout, flushToken);
+                            }
+                            catch (TaskCanceledException) { }
+                        }
+                    }
+                }
+
+                await Task.Delay(1, cancellationToken);
+            }
+        }
+
+        private void BuildChunk(List<StrongBox<byte[]>> stack, CancellationToken flushToken)
+        {
+            int counter = 0;
+            while (!_taskQueue.IsEmpty)
+            {
+                if (_taskQueue.TryDequeue(out var message))
+                {
+                    ++counter;
+                    builder.AppendLine(InMemoryCompression
+                        ? Utility.Unzip(message.Value)
+                        : Encoding.UTF8.GetString(message.Value));
+                    stack.Add(message);
+                    if (!_taskQueue.IsEmpty)
+                        builder.AppendLine();
+                    // ReSharper disable once RedundantAssignment
+                    message = null; //needed to reduce stress on memory 
+                }
+
+                if (counter == BatchSize && !flushToken.IsCancellationRequested)
+                {
+                    break;
+                }
+            }
         }
 
         protected override void CloseTarget()
@@ -277,9 +288,8 @@ namespace NLog.Targets.Http
             // or no flags available 
             // just wait
             _flushTokenSource.Cancel(false);
-            while (!hasFlushed || !_taskQueue.IsEmpty || _conversationActiveFlag.CurrentCount == 0) Thread.Sleep(1);
+            while (!_taskQueue.IsEmpty || _conversationActiveFlag.CurrentCount == 0) Thread.Sleep(1);
             _flushTokenSource.Dispose();
-            hasFlushed = false;
             _flushTokenSource = new CancellationTokenSource();
         }
 
