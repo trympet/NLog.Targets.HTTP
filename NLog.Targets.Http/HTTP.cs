@@ -22,8 +22,6 @@ namespace NLog.Targets.Http
     // ReSharper disable once InconsistentNaming
     public class HTTP : TargetWithLayout
     {
-        private const int HttpErrorRetryTimeout = 500;
-
         private static readonly Dictionary<string, HttpMethod> AvailableHttpMethods = new Dictionary<string, HttpMethod>
             {{"post", HttpMethod.Post}, {"get", HttpMethod.Get}};
 
@@ -56,6 +54,9 @@ namespace NLog.Targets.Http
         private string _proxyUser = string.Empty;
         private string _url;
 
+        /// <summary>
+        /// Invoked when the application is unable to flush due to a HTTP related error.
+        /// </summary>
         public static event EventHandler<FlushErrorEventArgs> FlushError;
 
         /// <summary>
@@ -98,6 +99,11 @@ namespace NLog.Targets.Http
         }
 
         public bool FlushBeforeShutdown { get; set; } = true;
+
+        /// <summary>
+        /// The timeout between attempted HTTP requests.
+        /// </summary>
+        public int HttpErrorRetryTimeout { get; set; } = 500;
 
         public int BatchSize
         {
@@ -217,7 +223,7 @@ namespace NLog.Targets.Http
                             _conversationActiveFlag.Wait(_terminateProcessor.Token);
                             var delay = Task.Delay(1);
                             FlushError?.Invoke(this, new FlushErrorEventArgs(builder.ToString()));
-                            await delay; // ensure conversation stays active for at least 1ms.
+                            await delay; // ensure semaphore is entered for at least 1ms for flush detection.
                         }
                         finally
                         {
@@ -232,6 +238,7 @@ namespace NLog.Targets.Http
                         {
                             try
                             {
+                                // Reduce stress
                                 await Task.Delay(HttpErrorRetryTimeout, flushToken);
                             }
                             catch (TaskCanceledException) { }
@@ -435,15 +442,5 @@ namespace NLog.Targets.Http
                 _propertiesChanged.Clear();
             }
         }
-    }
-
-    public class FlushErrorEventArgs : EventArgs
-    {
-        public FlushErrorEventArgs(string failedMessage)
-        {
-            FailedMessage = failedMessage;
-        }
-
-        public string FailedMessage { get; set; }
     }
 }
