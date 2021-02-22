@@ -11,7 +11,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using NLog.Common;
 using NLog.Config;
-using System.Diagnostics;
 #if (NETCORE30 || NETSTANDARD21)
 using System.Net.Security;
 #endif
@@ -37,13 +36,7 @@ namespace NLog.Targets.Http
         private int _batchSize = 1;
         private int _connectTimeout = 30000;
         private bool _expect100Continue = ServicePointManager.Expect100Continue;
-#if NETCORE30
         private SocketsHttpHandler _handler;
-#elif NETSTANDARD21
-        private HttpClientHandler _handler;
-#else
-        private WebRequestHandler _handler;
-#endif
         private HttpClient _httpClient;
         private bool _ignoreSslErrors = true;
         private bool hasHttpError;
@@ -191,9 +184,9 @@ namespace NLog.Targets.Http
 
         [Obsolete] public bool UseNagleAlgorithm { get; set; } = true;
 
-        private void ProcessChunk(StringBuilder sb, List<StrongBox<byte[]>> stack)
+        private async Task ProcessChunk(StringBuilder sb, List<StrongBox<byte[]>> stack)
         {
-            if (!SendFast(sb.ToString()))
+            if (!await SendFast(sb.ToString()).ConfigureAwait(false))
                 stack.ForEach(s => _taskQueue.Enqueue(s));
         }
 
@@ -201,7 +194,7 @@ namespace NLog.Targets.Http
         {
             base.InitializeTarget();
             var token = _terminateProcessor.Token;
-            var task = Task.Run(() => Start(token), token);
+            _ = Task.Run(() => Start(token), token);
         }
 
         private async Task Start(CancellationToken cancellationToken)
@@ -221,7 +214,7 @@ namespace NLog.Targets.Http
                         try
                         {
                             _conversationActiveFlag.Wait(_terminateProcessor.Token);
-                            var delay = Task.Delay(1);
+                            var delay = Task.Delay(1, CancellationToken.None);
                             FlushError?.Invoke(this, new FlushErrorEventArgs(builder.ToString()));
                             await delay; // ensure semaphore is entered for at least 1ms for flush detection.
                         }
@@ -232,14 +225,14 @@ namespace NLog.Targets.Http
                     }
                     else
                     {
-                        ProcessChunk(builder, stack);
+                        await ProcessChunk(builder, stack).ConfigureAwait(false);
 
                         if (hasHttpError)
                         {
                             try
                             {
                                 // Reduce stress
-                                await Task.Delay(HttpErrorRetryTimeout, flushToken);
+                                await Task.Delay(HttpErrorRetryTimeout, flushToken).ConfigureAwait(false);
                             }
                             catch (TaskCanceledException) { }
                         }
@@ -324,39 +317,38 @@ namespace NLog.Targets.Http
         ///     <value>true</value>
         ///     if succeeded
         /// </returns>
-        private bool SendFast(string message)
+        private async Task<bool> SendFast(string message)
         {
             _conversationActiveFlag.Wait(_terminateProcessor.Token);
             try
             {
                 ResetHttpClientIfNeeded();
-
                 var method = GetHttpMethodsToUseOrDefault();
                 var request = new HttpRequestMessage(method, string.Empty)
                 {
+                    Version = new Version(2, 0),
                     Content = new StringContent(message, Encoding.UTF8, ContentType)
                 };
 
-                var isSuccess = _httpClient.SendAsync(request).ContinueWith(responseTask =>
+
+                var httpResponseMessage = await _httpClient.SendAsync(request).ConfigureAwait(false);
+                if (httpResponseMessage.StatusCode == HttpStatusCode.TooManyRequests)
                 {
-                    var httpResponseMessage = responseTask.Result;
-                    return httpResponseMessage.IsSuccessStatusCode;
-                }).GetAwaiter().GetResult();
+                    await Task.Delay(7500).ConfigureAwait(false);
+                }
+
+                var isSuccess = httpResponseMessage.IsSuccessStatusCode;
                 hasHttpError = !isSuccess;
                 return isSuccess;
             }
-            catch (WebException wex)
+            catch (WebException)
             {
-                InternalLogger.Warn(wex, "Failed to communicate over HTTP");
                 hasHttpError = true;
                 return false;
             }
-            catch (AggregateException aex)
+            catch (HttpRequestException)
             {
-                if (aex.InnerException is HttpRequestException httpEx)
-                {
-                    hasHttpError = true;
-                }
+                hasHttpError = true;
                 return false;
             }
             catch (Exception ex)
@@ -394,22 +386,16 @@ namespace NLog.Targets.Http
             lock (_propertiesChanged)
             {
                 // ReSharper disable once UseObjectOrCollectionInitializer
-#if NETCORE30
-                    _handler = new SocketsHttpHandler();
-#elif NETSTANDARD21
-                _handler = new HttpClientHandler();
-#else
-                _handler = new WebRequestHandler();
-#endif
-                _handler.UseProxy = !string.IsNullOrWhiteSpace(ProxyUrl);
+                _handler = new SocketsHttpHandler
+                {
+                    UseProxy = !string.IsNullOrWhiteSpace(ProxyUrl)
+                };
                 _httpClient = new HttpClient(_handler)
                 {
                     BaseAddress = new Uri(Url),
                     Timeout = TimeSpan.FromMilliseconds(ConnectTimeout)
                 };
-                _httpClient.DefaultRequestHeaders.ConnectionClose = true;
 
-                _httpClient.DefaultRequestHeaders.ExpectContinue = Expect100Continue;
                 _httpClient.DefaultRequestHeaders.Accept.Clear();
                 _httpClient.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue(Accept));
 
@@ -429,16 +415,14 @@ namespace NLog.Targets.Http
                 }
 
                 if (!string.IsNullOrWhiteSpace(Authorization))
+                {
                     _httpClient.DefaultRequestHeaders.Authorization = GetAuthorizationHeader();
+                }
                 if (IgnoreSslErrors)
-#if NETCORE30
-                        _handler.SslOptions = new SslClientAuthenticationOptions{RemoteCertificateValidationCallback =
- (sender, certificate, chain, errors) => true};
-#elif NETSTANDARD21
-                    _handler.ServerCertificateCustomValidationCallback = (message, certificate, chain, errors) => true;
-#else
-                    _handler.ServerCertificateValidationCallback = (sender, certificate, chain, errors) => true;
-#endif
+                {
+                    _handler.SslOptions = new System.Net.Security.SslClientAuthenticationOptions { RemoteCertificateValidationCallback = (sender, certificate, chain, errors) => true };
+                }
+
                 _propertiesChanged.Clear();
             }
         }
