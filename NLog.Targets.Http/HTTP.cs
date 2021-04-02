@@ -36,7 +36,13 @@ namespace NLog.Targets.Http
         private int _batchSize = 1;
         private int _connectTimeout = 30000;
         private bool _expect100Continue = ServicePointManager.Expect100Continue;
+
+#if (NETCORE30 || NET5_0 || NETCOREAPP3_1)
         private SocketsHttpHandler _handler;
+#elif NETSTANDARD21
+        private HttpClientHandler _handler;
+#endif
+
         private HttpClient _httpClient;
         private bool _ignoreSslErrors = true;
         private bool hasHttpError;
@@ -386,10 +392,19 @@ namespace NLog.Targets.Http
             lock (_propertiesChanged)
             {
                 // ReSharper disable once UseObjectOrCollectionInitializer
+#if (NETCORE30 || NET5_0 || NETCOREAPP3_1)
                 _handler = new SocketsHttpHandler
                 {
                     UseProxy = !string.IsNullOrWhiteSpace(ProxyUrl)
                 };
+#elif NETSTANDARD21
+                _handler = new HttpClientHandler
+                {
+                    UseProxy = !string.IsNullOrWhiteSpace(ProxyUrl)
+                };
+#endif
+
+
                 _httpClient = new HttpClient(_handler)
                 {
                     BaseAddress = new Uri(Url),
@@ -420,7 +435,11 @@ namespace NLog.Targets.Http
                 }
                 if (IgnoreSslErrors)
                 {
+#if (NETCOREAPP3_0 || NET5_0 || NETCOREAPP3_1)
                     _handler.SslOptions = new System.Net.Security.SslClientAuthenticationOptions { RemoteCertificateValidationCallback = (sender, certificate, chain, errors) => true };
+#elif NETSTANDARD21
+                    _handler.ServerCertificateCustomValidationCallback = (message, certificate, chain, errors) => true;
+#endif
                 }
 
                 _propertiesChanged.Clear();
