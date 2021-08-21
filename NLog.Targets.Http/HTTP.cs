@@ -104,6 +104,11 @@ namespace NLog.Targets.Http
         /// </summary>
         public int HttpErrorRetryTimeout { get; set; } = 500;
 
+        /// <summary>
+        /// The minimum interval at which whether new messages are received is evaluated.
+        /// </summary>
+        public int MessagePollInterval { get; set; } = 1;
+
         public int BatchSize
         {
             get => _batchSize;
@@ -200,7 +205,7 @@ namespace NLog.Targets.Http
         {
             base.InitializeTarget();
             var token = _terminateProcessor.Token;
-            _ = Task.Run(() => Start(token), token);
+            _ = Start(token);
         }
 
         private async Task Start(CancellationToken cancellationToken)
@@ -235,8 +240,7 @@ namespace NLog.Targets.Http
 
                         if (hasHttpError)
                         {
-                            try
-                            {
+                            try {
                                 // Reduce stress
                                 await Task.Delay(HttpErrorRetryTimeout, flushToken).ConfigureAwait(false);
                             }
@@ -245,9 +249,8 @@ namespace NLog.Targets.Http
                     }
                 }
 
-                await Task.Delay(1, cancellationToken);
-            }
-        }
+                await Task.Delay(Math.Max(1, MessagePollInterval), cancellationToken).ConfigureAwait(false);
+            } }
 
         private void BuildChunk(List<StrongBox<byte[]>> stack, CancellationToken flushToken)
         {
