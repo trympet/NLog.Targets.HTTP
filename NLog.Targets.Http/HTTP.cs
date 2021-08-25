@@ -37,7 +37,7 @@ namespace NLog.Targets.Http
         private int _connectTimeout = 30000;
         private bool _expect100Continue = ServicePointManager.Expect100Continue;
 
-#if (NETCORE30 || NET5_0 || NETCOREAPP3_1)
+#if (NETCORE30 || NET5_0_OR_GREATER || NETCOREAPP3_1)
         private SocketsHttpHandler _handler;
 #elif NETSTANDARD21
         private HttpClientHandler _handler;
