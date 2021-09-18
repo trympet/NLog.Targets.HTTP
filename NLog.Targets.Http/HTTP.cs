@@ -395,7 +395,7 @@ namespace NLog.Targets.Http
             lock (_propertiesChanged)
             {
                 // ReSharper disable once UseObjectOrCollectionInitializer
-#if (NETCORE30 || NET5_0 || NETCOREAPP3_1)
+#if (NETCORE30 || NET5_0_OR_GREATER || NETCOREAPP3_1)
                 _handler = new SocketsHttpHandler
                 {
                     UseProxy = !string.IsNullOrWhiteSpace(ProxyUrl)
