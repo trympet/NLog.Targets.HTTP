@@ -107,7 +107,7 @@ namespace NLog.Targets.Http
         /// <summary>
         /// The minimum interval at which whether new messages are received is evaluated.
         /// </summary>
-        public int MessagePollInterval { get; set; } = 1;
+        public int MessagePollInterval { get; set; } = 20;
 
         public int BatchSize
         {
@@ -240,7 +240,8 @@ namespace NLog.Targets.Http
 
                         if (hasHttpError)
                         {
-                            try {
+                            try
+                            {
                                 // Reduce stress
                                 await Task.Delay(HttpErrorRetryTimeout, flushToken).ConfigureAwait(false);
                             }
@@ -250,7 +251,8 @@ namespace NLog.Targets.Http
                 }
 
                 await Task.Delay(Math.Max(1, MessagePollInterval), cancellationToken).ConfigureAwait(false);
-            } }
+            }
+        }
 
         private void BuildChunk(List<StrongBox<byte[]>> stack, CancellationToken flushToken)
         {
@@ -296,6 +298,7 @@ namespace NLog.Targets.Http
             // If there are messages to be processed
             // or no flags available 
             // just wait
+            MessagePollInterval = 1;
             _flushTokenSource.Cancel(false);
             while (!_taskQueue.IsEmpty || _conversationActiveFlag.CurrentCount == 0) Thread.Sleep(1);
             _flushTokenSource.Dispose();
