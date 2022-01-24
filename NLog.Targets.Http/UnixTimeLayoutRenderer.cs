@@ -1,5 +1,5 @@
-﻿using System.Text;
-using NLog.LayoutRenderers;
+﻿using NLog.LayoutRenderers;
+using System.Text;
 
 namespace NLog.Targets.Http
 {
