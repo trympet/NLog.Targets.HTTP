@@ -1,7 +1,7 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFrameworks>net6.0;netstandard2.1</TargetFrameworks>
+    <TargetFrameworks>net6.0</TargetFrameworks>
     <Title>NLog.Targets.Http</Title>
     <Description>An NLog target for Http log entries submission (works wih Splunk HEC)</Description>
     <Authors>Dariusz Danielewski, Stan Smith and Julian Verdurmen</Authors>
@@ -52,51 +52,4 @@ Version 0.0.1
     <PackageReference Include="NLog" Version="5.0.0-rc2" />
   </ItemGroup>
 
-  <!--.NET Standard 2.1 config -->
-  <PropertyGroup Condition=" '$(TargetFramework)' == 'netstandard2.1' ">
-    <AssemblyTitle>NLog.Targets.Http .NET Standard 2.1</AssemblyTitle>
-    <DefineConstants>NETSTANDARD21</DefineConstants>
-  </PropertyGroup>
-
-  <!--.NET Core 3.0 config -->
-  <PropertyGroup Condition=" '$(TargetFramework)' == 'netcoreapp3.0' ">
-    <AssemblyTitle>NLog.Targets.Http .NET Core 3.0</AssemblyTitle>
-    <DefineConstants>NETCORE30</DefineConstants>
-  </PropertyGroup>
-
-  <!-- .NET 4.5 config -->
-  <PropertyGroup Condition=" '$(TargetFramework)'=='net45' ">
-    <AssemblyTitle>NLog.Targets.Http .NET 4.5</AssemblyTitle>
-    <DefineConstants>NETFULL</DefineConstants>
-  </PropertyGroup>
-
-  <!-- .NET 4.6.2 config -->
-  <PropertyGroup Condition=" '$(TargetFramework)'=='net462' ">
-    <AssemblyTitle>NLog.Targets.Http .NET 4.6.2</AssemblyTitle>
-    <DefineConstants>NETFULL</DefineConstants>
-  </PropertyGroup>
-
-  <!-- .NET 4.7.2 config -->
-  <PropertyGroup Condition=" '$(TargetFramework)'=='net472' ">
-    <AssemblyTitle>NLog.Targets.Http .NET 4.7.2</AssemblyTitle>
-    <DefineConstants>NETFULL</DefineConstants>
-  </PropertyGroup>
-
-  <!-- .NET 4.8 config -->
-  <PropertyGroup Condition=" '$(TargetFramework)'=='net48' ">
-    <AssemblyTitle>NLog.Targets.Http .NET 4.8</AssemblyTitle>
-    <DefineConstants>NETFULL</DefineConstants>
-  </PropertyGroup>
-
-  <ItemGroup Condition="$(TargetFramework.StartsWith('net4'))">
-    <Reference Include="mscorlib" />
-    <Reference Include="System" />
-    <Reference Include="System.Core" />
-    <Reference Include="Microsoft.CSharp" />
-    <Reference Include="System.Net.Http.WebRequest" />
-  </ItemGroup>
-  
-   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
-    <DebugType>Full</DebugType>
-  </PropertyGroup>
 </Project>
