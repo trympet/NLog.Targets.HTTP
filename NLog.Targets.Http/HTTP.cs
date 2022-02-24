@@ -6,7 +6,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
-using System.Net.Http.Headers;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading;
@@ -37,12 +36,7 @@ namespace NLog.Targets.Http
         private int _connectTimeout = 30000;
         private bool _expect100Continue = ServicePointManager.Expect100Continue;
 
-#if (NETCORE30 || NET5_0_OR_GREATER || NETCOREAPP3_1)
-        private SocketsHttpHandler _handler;
-#elif NETSTANDARD21
-        private HttpClientHandler _handler;
-#endif
-
+        private IDisposable _httpClientRef;
         private HttpClient _httpClient;
         private bool _ignoreSslErrors = true;
         private bool hasHttpError;
@@ -284,6 +278,10 @@ namespace NLog.Targets.Http
             if (FlushBeforeShutdown)
                 AwaitCurrentMessagesToProcess();
             _terminateProcessor.Cancel(false);
+            _conversationActiveFlag.Dispose();
+            _terminateProcessor.Dispose();
+            _flushTokenSource.Dispose();
+            _httpClientRef?.Dispose();
             base.CloseTarget();
         }
 
@@ -379,14 +377,6 @@ namespace NLog.Targets.Http
             return AvailableHttpMethods[Method.ToLower()] ?? HttpMethod.Post;
         }
 
-        private AuthenticationHeaderValue GetAuthorizationHeader()
-        {
-            var parts = Authorization.Split(' ');
-            return parts.Length == 1
-                ? new AuthenticationHeaderValue(Authorization)
-                : new AuthenticationHeaderValue(parts[0], string.Join(" ", parts.Skip(1)));
-        }
-
         private void NotifyPropertyChanged(string name)
         {
             _propertiesChanged.Push(name);
@@ -397,57 +387,7 @@ namespace NLog.Targets.Http
             if (!_propertiesChanged.Any()) return;
             lock (_propertiesChanged)
             {
-                // ReSharper disable once UseObjectOrCollectionInitializer
-#if (NETCORE30 || NET5_0_OR_GREATER || NETCOREAPP3_1)
-                _handler = new SocketsHttpHandler
-                {
-                    UseProxy = !string.IsNullOrWhiteSpace(ProxyUrl)
-                };
-#elif NETSTANDARD21
-                _handler = new HttpClientHandler
-                {
-                    UseProxy = !string.IsNullOrWhiteSpace(ProxyUrl)
-                };
-#endif
-
-
-                _httpClient = new HttpClient(_handler)
-                {
-                    BaseAddress = new Uri(Url),
-                    Timeout = TimeSpan.FromMilliseconds(ConnectTimeout)
-                };
-
-                _httpClient.DefaultRequestHeaders.Accept.Clear();
-                _httpClient.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue(Accept));
-
-                if (_handler.UseProxy)
-                {
-                    var useDefaultCredentials = string.IsNullOrWhiteSpace(ProxyUser);
-                    _handler.Proxy = new WebProxy(new Uri(ProxyUrl))
-                    { UseDefaultCredentials = useDefaultCredentials };
-                    if (!useDefaultCredentials)
-                    {
-                        var cred = ProxyUser.Split('\\');
-                        _handler.Proxy.Credentials = cred.Length == 1
-                            ? new NetworkCredential { UserName = ProxyUser, Password = ProxyPassword }
-                            : new NetworkCredential
-                            { Domain = cred[0], UserName = cred[1], Password = ProxyPassword };
-                    }
-                }
-
-                if (!string.IsNullOrWhiteSpace(Authorization))
-                {
-                    _httpClient.DefaultRequestHeaders.Authorization = GetAuthorizationHeader();
-                }
-                if (IgnoreSslErrors)
-                {
-#if (NETCOREAPP3_0 || NET5_0 || NETCOREAPP3_1)
-                    _handler.SslOptions = new System.Net.Security.SslClientAuthenticationOptions { RemoteCertificateValidationCallback = (sender, certificate, chain, errors) => true };
-#elif NETSTANDARD21
-                    _handler.ServerCertificateCustomValidationCallback = (message, certificate, chain, errors) => true;
-#endif
-                }
-
+                _httpClientRef = HttpClientPool.Instance.Aquire(this, out _httpClient);
                 _propertiesChanged.Clear();
             }
         }
