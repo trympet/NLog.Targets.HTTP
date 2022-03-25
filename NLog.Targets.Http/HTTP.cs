@@ -40,6 +40,8 @@ namespace NLog.Targets.Http
         private HttpClient _httpClient;
         private bool _ignoreSslErrors = true;
         private bool hasHttpError;
+        private TaskCompletionSource timer = new TaskCompletionSource();
+        private int timerBarrier; // bool
 
         private int _maxQueueSize = int.MaxValue;
         private string _proxyPassword = string.Empty;
@@ -205,6 +207,7 @@ namespace NLog.Targets.Http
         private async Task Start(CancellationToken cancellationToken)
         {
             var stack = new List<StrongBox<byte[]>>();
+            var periodicTimer = timer;
             while (!cancellationToken.IsCancellationRequested)
             {
                 builder.Clear();
@@ -244,7 +247,14 @@ namespace NLog.Targets.Http
                     }
                 }
 
-                await Task.Delay(Math.Max(1, MessagePollInterval), cancellationToken).ConfigureAwait(false);
+                if (Interlocked.Exchange(ref timerBarrier, 0) == 1)
+                {
+                    periodicTimer = timer;
+                    continue;
+                }
+
+                await periodicTimer.Task.ConfigureAwait(false);
+                //await Task.Delay(Math.Max(1, MessagePollInterval), cancellationToken).ConfigureAwait(false);
             }
         }
 
@@ -305,7 +315,14 @@ namespace NLog.Targets.Http
 
         protected override void Write(LogEventInfo logEvent)
         {
+            var oldTimer = timer;
             SafeEnqueue(logEvent);
+
+            if (Interlocked.CompareExchange(ref timerBarrier, 1, 0) == 0)
+            {
+                Interlocked.CompareExchange(ref timer, new TaskCompletionSource(), oldTimer)
+                    .TrySetResult();
+            }
         }
 
         private void SafeEnqueue(LogEventInfo logEvent)
