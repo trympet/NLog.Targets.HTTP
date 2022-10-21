@@ -11,7 +11,7 @@ namespace NLog.Targets.Http
 {
     internal readonly struct HttpClientParams : IEquatable<HttpClientParams>
     {
-        public HttpClientParams(HTTP owner)
+        public HttpClientParams(HTTP2 owner)
         {
             Url = owner.Url;
             Timeout = TimeSpan.FromMilliseconds(owner.ConnectTimeout);
@@ -45,7 +45,7 @@ namespace NLog.Targets.Http
         public HttpClient Create()
         {
 #if (NETCORE30 || NET5_0_OR_GREATER || NETCOREAPP3_1)
-            var handler = new SocketsHttpHandler
+            var handler = HTTP2.Handler?.Invoke() ?? new SocketsHttpHandler
             {
                 UseProxy = UseProxy,
             };
@@ -59,26 +59,26 @@ namespace NLog.Targets.Http
             var client = new HttpClient(handler)
             {
                 BaseAddress = new Uri(Url),
-                Timeout = Timeout
+                Timeout = Timeout,
             };
 
             client.DefaultRequestHeaders.Accept.Clear();
             client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue(Accept));
 
-            if (handler.UseProxy)
-            {
-                var useDefaultCredentials = string.IsNullOrWhiteSpace(ProxyUser);
-                handler.Proxy = new WebProxy(new Uri(ProxyUrl))
-                { UseDefaultCredentials = useDefaultCredentials };
-                if (!useDefaultCredentials)
-                {
-                    var cred = ProxyUser.Split('\\');
-                    handler.Proxy.Credentials = cred.Length == 1
-                        ? new NetworkCredential { UserName = ProxyUser, Password = ProxyPassword }
-                        : new NetworkCredential
-                        { Domain = cred[0], UserName = cred[1], Password = ProxyPassword };
-                }
-            }
+            //if (handler.UseProxy)
+            //{
+            //    var useDefaultCredentials = string.IsNullOrWhiteSpace(ProxyUser);
+            //    handler.Proxy = new WebProxy(new Uri(ProxyUrl))
+            //    { UseDefaultCredentials = useDefaultCredentials };
+            //    if (!useDefaultCredentials)
+            //    {
+            //        var cred = ProxyUser.Split('\\');
+            //        handler.Proxy.Credentials = cred.Length == 1
+            //            ? new NetworkCredential { UserName = ProxyUser, Password = ProxyPassword }
+            //            : new NetworkCredential
+            //            { Domain = cred[0], UserName = cred[1], Password = ProxyPassword };
+            //    }
+            //}
 
             if (!string.IsNullOrWhiteSpace(Authorization))
             {
@@ -87,7 +87,7 @@ namespace NLog.Targets.Http
             if (IgnoreSslErrors)
             {
 #if NETCOREAPP3_0_OR_GREATER
-                handler.SslOptions = new System.Net.Security.SslClientAuthenticationOptions { RemoteCertificateValidationCallback = (sender, certificate, chain, errors) => true };
+                //handler.SslOptions = new System.Net.Security.SslClientAuthenticationOptions { RemoteCertificateValidationCallback = (sender, certificate, chain, errors) => true };
 #elif NETSTANDARD21
                 handler.ServerCertificateCustomValidationCallback = (message, certificate, chain, errors) => true;
 #endif

@@ -9,19 +9,19 @@ namespace NLog.Targets.Http
 {
     internal class HttpClientPool
     {
-        private static HttpClientPool _instance;
+        private static HttpClientPool? _instance;
         private readonly object _lock = new object();
         private Dictionary<HttpClientParams, HttpClientReference> _clients = new Dictionary<HttpClientParams, HttpClientReference>();
 
         public static HttpClientPool Instance => _instance ??= new HttpClientPool();
 
-        public IDisposable Aquire(HTTP owner, out HttpClient httpClient)
+        public IDisposable Aquire(HTTP2 owner, out HttpClient httpClient)
         {
             var clientParams = new HttpClientParams(owner);
             HttpClientReference httpClientReference;
             lock (_lock)
             {
-                if (!_clients.TryGetValue(clientParams, out httpClientReference))
+                if (!_clients.TryGetValue(clientParams, out httpClientReference!))
                 {
                     _clients[clientParams] = httpClientReference = new HttpClientReference(clientParams.Create());
                 }
