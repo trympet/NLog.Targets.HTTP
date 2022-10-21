@@ -49,6 +49,13 @@ namespace NLog.Targets.Http
                     decoder.Dispose();
                 }
             }
+
+            protected override void Next()
+            {
+                base.Next();
+                decoder.Dispose();
+                decoder = default;
+            }
         }
 
         private class MemoryStreamContent : HttpContent
@@ -125,7 +132,7 @@ namespace NLog.Targets.Http
                         source = source[bytesConsumed..];
                         buffer = buffer[bytesWritten..];
                     }
-                    memorySequence = memorySequence.Next;
+                    Next();
                 }
 
                 return written;
@@ -135,6 +142,11 @@ namespace NLog.Targets.Http
             {
                 source.CopyTo(buffer);
                 bytesConsumed = bytesWritten = Math.Min(source.Length, buffer.Length);
+            }
+
+            protected virtual void Next()
+            {
+                memorySequence = memorySequence.Next;
             }
         }
     }

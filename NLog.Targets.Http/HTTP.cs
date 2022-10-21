@@ -79,9 +79,7 @@ namespace NLog.Targets.Http
             }
         }
 
-        public bool SendCompressed { get; set; }
-
-        public int BatchSize { get; set; } = 2;
+        public int BatchSize { get; set; } = 64;
 
         public string Method { get; set; } = "POST";
 
@@ -176,6 +174,10 @@ namespace NLog.Targets.Http
             base.CloseTarget();
             Debug.Assert(_state != null);
             _state.Cts.Cancel();
+            if (TempFile != null)
+            {
+                File.Delete(TempFile);
+            }
         }
 
         protected override async void FlushAsync(AsyncContinuation asyncContinuation)
