@@ -285,7 +285,7 @@ namespace NLog.Targets.Http
                 else
                 {
                     // during phase
-                    wait = Math.Max(0, wait - phaseDuration.Elapsed.Milliseconds);
+                    wait = Math.Max(0, batchSize - (int)phaseDuration.Elapsed.TotalMilliseconds);
                     pendingCount = (pendingCount + 1) % batchSize;
                 }
             }
