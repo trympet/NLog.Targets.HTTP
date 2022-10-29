@@ -248,7 +248,7 @@ namespace NLog.Targets.Http
                     cancellationToken.ThrowIfCancellationRequested();
                     ThreadPool.UnsafeRegisterWaitForSingleObject(
                         _state!.PendingMessages,
-                        static (state, signal) => ((ValueTaskSource<bool>)state!).SetResult(signal),
+                        static (state, timedOut) => ((ValueTaskSource<bool>)state!).SetResult(!timedOut),
                         valueTaskSource,
                         wait,
                         executeOnlyOnce: true
@@ -285,7 +285,7 @@ namespace NLog.Targets.Http
                 else
                 {
                     // during phase
-                    wait = Math.Max(0, batchSize - (int)phaseDuration.Elapsed.TotalMilliseconds);
+                    wait = Math.Max(0, MessagePollInterval - (int)phaseDuration.Elapsed.TotalMilliseconds);
                     pendingCount = (pendingCount + 1) % batchSize;
                 }
             }
