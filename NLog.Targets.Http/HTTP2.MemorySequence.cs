@@ -1,5 +1,4 @@
-﻿using System;
-using System.Buffers;
+﻿using System.Buffers;
 #if (NETCORE30 || NETSTANDARD21)
 using System.Net.Security;
 #endif
