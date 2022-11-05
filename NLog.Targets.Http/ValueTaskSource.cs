@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Diagnostics;
 using System.Runtime.ExceptionServices;
 using System.Threading;
 using System.Threading.Tasks;
@@ -13,34 +14,90 @@ namespace NLog.Targets.Http
     {
         private ManualResetValueTaskSourceCore<T> _mrvtsc;
         private CancellationTokenRegistration _ctr;
+        private bool _completed;
+        private bool _stopping;
+        private bool _waiting;
+        private T? _result;
 
         public ValueTask<T> WaitAsync(CancellationToken cancellationToken)
         {
-            _ctr = cancellationToken.UnsafeRegister(static (state, cancellationToken) => ((ValueTaskSource<T>)state!).SetCancelled(cancellationToken: cancellationToken), this);
-            return new ValueTask<T>(this, _mrvtsc.Version);
+            lock (this)
+            {
+                Debug.Assert(!_waiting);
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    return ValueTask.FromCanceled<T>(cancellationToken);
+                }
+
+                if (_completed)
+                {
+                    _completed = false;
+                    var result = _result;
+                    _result = default;
+                    return ValueTask.FromResult(result!);
+                }
+
+                _waiting = true;
+                _ctr = cancellationToken.UnsafeRegister(static (state, cancellationToken) => ((ValueTaskSource<T>)state!).SetCancelled(cancellationToken: cancellationToken), this);
+                return new ValueTask<T>(this, _mrvtsc.Version);
+            }
         }
 
         public void SetCancelled(CancellationToken cancellationToken)
         {
-            _mrvtsc.SetException(ExceptionDispatchInfo.SetCurrentStackTrace(new OperationCanceledException(cancellationToken)));
+            bool completeTask = false;
+            lock (this)
+            {
+                if (_waiting && !_completed)
+                {
+                    completeTask = true;
+                    _stopping = true;
+                }
+            }
+            if (completeTask)
+            {
+                _mrvtsc.SetException(ExceptionDispatchInfo.SetCurrentStackTrace(new OperationCanceledException(cancellationToken)));
+            }
         }
 
         public void SetResult(T result)
         {
+            lock (this)
+            {
+                if (_stopping)
+                {
+                    return;
+                }
+
+                _completed = true;
+                if (!_waiting)
+                {
+                    _result = result;
+                    return;
+                }
+            }
+
             _mrvtsc.SetResult(result);
         }
 
         public T GetResult(short token)
         {
             _ctr.Dispose();
-            try
+            lock (this)
             {
-                return _mrvtsc.GetResult(token);
-            }
-            finally
-            {
-                _mrvtsc.Reset();
-                _ctr = default;
+                try
+                {
+                    return _mrvtsc.GetResult(token);
+                }
+                finally
+                {
+                    _mrvtsc.Reset();
+                    _ctr = default;
+                    _completed = false;
+                    _result = default;
+                    _waiting = false;
+                    _stopping = false;
+                }
             }
         }
 

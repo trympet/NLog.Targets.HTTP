@@ -242,16 +242,24 @@ namespace NLog.Targets.Http
                 bool signal = false;
                 if (wait != 0)
                 {
-                    // signal = _pendingMessages.WaitOne(wait);
                     cancellationToken.ThrowIfCancellationRequested();
-                    ThreadPool.UnsafeRegisterWaitForSingleObject(
+                    var registration = ThreadPool.UnsafeRegisterWaitForSingleObject(
                         _state!.PendingMessages,
                         static (state, timedOut) => ((ValueTaskSource<bool>)state!).SetResult(!timedOut),
                         valueTaskSource,
                         wait,
                         executeOnlyOnce: true
                     );
-                    signal = await valueTaskSource.WaitAsync(cancellationToken);
+                    try
+                    {
+                        signal = await valueTaskSource.WaitAsync(cancellationToken);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        var didUnregister = registration.Unregister(_state!.PendingMessages);
+                        Debug.Assert(didUnregister);
+                        throw;
+                    }
                 }
                 if (pendingCount == 0)
                 {
