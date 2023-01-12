@@ -49,7 +49,7 @@ Version 0.0.1
 
   <!--common NuGet package refs -->
   <ItemGroup>
-    <PackageReference Include="NLog" Version="5.0.*" />
+    <PackageReference Include="NLog" Version="5.1.*" />
   </ItemGroup>
 
 </Project>
