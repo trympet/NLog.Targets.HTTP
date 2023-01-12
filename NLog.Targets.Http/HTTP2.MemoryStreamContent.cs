@@ -61,7 +61,6 @@ namespace NLog.Targets.Http
         private class MemoryStreamContent : HttpContent
         {
             private readonly int _length;
-            private readonly bool decompress;
             private long _consumed;
             private ReadOnlySequenceSegment<byte>? memorySequence;
 
@@ -69,7 +68,6 @@ namespace NLog.Targets.Http
             {
                 _length = length;
                 this.memorySequence = memorySequence;
-                this.decompress = decompress;
             }
 
             protected override void SerializeToStream(Stream stream, TransportContext? context, CancellationToken cancellationToken)
@@ -146,7 +144,7 @@ namespace NLog.Targets.Http
 
             protected virtual void Next()
             {
-                memorySequence = memorySequence.Next;
+                memorySequence = memorySequence?.Next;
             }
         }
     }

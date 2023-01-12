@@ -33,7 +33,6 @@ namespace NLog.Targets.Http
         private int _connectTimeout = 30000;
         private bool _expect100Continue = ServicePointManager.Expect100Continue;
         private bool _ignoreSslErrors = true;
-        private bool _flush;
         private HttpStatusCode _phaseStatus;
 
         public static EventHandler<FlushErrorEventArgs>? FlushError;

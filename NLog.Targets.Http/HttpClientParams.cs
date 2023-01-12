@@ -25,11 +25,11 @@ namespace NLog.Targets.Http
 
         public bool UseProxy { get; }
 
-        public string ProxyUser { get; }
+        public string? ProxyUser { get; }
 
-        public string ProxyUrl { get; }
+        public string? ProxyUrl { get; }
 
-        public string ProxyPassword { get; }
+        public string? ProxyPassword { get; }
 
         public string Url { get; init; }
 
@@ -37,7 +37,7 @@ namespace NLog.Targets.Http
 
         public string Accept { get; init; }
 
-        public string Authorization { get; init; }
+        public string? Authorization { get; init; }
 
         public bool IgnoreSslErrors { get; init; }
 
@@ -95,7 +95,7 @@ namespace NLog.Targets.Http
             return client;
         }
 
-        public override bool Equals(object obj)
+        public override bool Equals(object? obj)
         {
             return obj is HttpClientParams @params && Equals(@params);
         }
@@ -129,12 +129,14 @@ namespace NLog.Targets.Http
             return hash.ToHashCode();
         }
 
-        private AuthenticationHeaderValue GetAuthorizationHeader()
+        private AuthenticationHeaderValue? GetAuthorizationHeader()
         {
-            var parts = Authorization.Split(' ');
-            return parts.Length == 1
-                ? new AuthenticationHeaderValue(Authorization)
-                : new AuthenticationHeaderValue(parts[0], string.Join(" ", parts.Skip(1)));
+            var parts = Authorization?.Split(' ');
+            return parts is null
+                ? null
+                : parts.Length == 1
+                    ? new AuthenticationHeaderValue(Authorization!)
+                    : new AuthenticationHeaderValue(parts[0], string.Join(" ", parts.Skip(1)));
         }
 
         public static bool operator ==(HttpClientParams left, HttpClientParams right)
