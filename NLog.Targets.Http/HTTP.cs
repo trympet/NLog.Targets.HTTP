@@ -255,7 +255,7 @@ namespace NLog.Targets.Http
                     }
                     catch (OperationCanceledException)
                     {
-                        var didUnregister = registration.Unregister(_state!.PendingMessages);
+                        var didUnregister = registration.Unregister(null);
                         Debug.Assert(didUnregister);
                         throw;
                     }
