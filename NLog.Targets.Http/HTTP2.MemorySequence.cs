@@ -5,7 +5,7 @@ using System.Net.Security;
 
 namespace NLog.Targets.Http
 {
-    public partial class HTTP2
+    public partial class HttpLogger
     {
         private sealed class MemorySequence : ReadOnlySequenceSegment<byte>
         {
