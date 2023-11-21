@@ -20,15 +20,17 @@ public partial class HttpLogger
         private readonly string category;
         private readonly LogLevel logLevel;
         private readonly EventId eventId;
+        private readonly int threadId;
         private readonly Exception? exception;
         private readonly IEnumerable<KeyValuePair<string, object?>>? eventProperties;
         private readonly string message;
 
-        public SerializableLogEvent(HttpLogger http, string category, LogLevel logLevel, EventId eventId, Exception? exception, string message, IEnumerable<KeyValuePair<string, object?>>? eventProperties) : base(http)
+        public SerializableLogEvent(HttpLogger http, string category, LogLevel logLevel, EventId eventId, int threadId, Exception? exception, string message, IEnumerable<KeyValuePair<string, object?>>? eventProperties) : base(http)
         {
             this.category = category;
             this.logLevel = logLevel;
             this.eventId = eventId;
+            this.threadId = threadId;
             this.exception = exception;
             this.message = message;
             this.eventProperties = eventProperties;
@@ -36,7 +38,7 @@ public partial class HttpLogger
 
         internal sealed override void Serialize(Utf8JsonWriter writer)
         {
-            base.HttpLogger._logMessage.Serialize(writer, category, logLevel, message, exception, eventProperties);
+            base.HttpLogger._logMessage.Serialize(writer, category, logLevel, threadId, message, exception, eventProperties);
         }
     }
 

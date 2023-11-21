@@ -82,7 +82,7 @@ public sealed partial class HttpLogger : IDisposable
 
     public void Log<TState>(string category, LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
     {
-        var workItem = new SerializableLogEvent(this, category, logLevel, eventId, exception, formatter(state, exception), state as IEnumerable<KeyValuePair<string, object?>>);
+        var workItem = new SerializableLogEvent(this, category, logLevel, eventId, Environment.CurrentManagedThreadId, exception, formatter(state, exception), state as IEnumerable<KeyValuePair<string, object?>>);
         ThreadPool.UnsafeQueueUserWorkItem(workItem, false);
     }
 

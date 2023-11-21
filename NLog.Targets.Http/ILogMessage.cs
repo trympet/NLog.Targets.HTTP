@@ -7,5 +7,5 @@ namespace NLog.Targets.Http;
 
 public interface ILogMessage
 {
-    void Serialize(Utf8JsonWriter writer, string category, LogLevel logLevel, string message, Exception? exception, IEnumerable<KeyValuePair<string, object?>>? eventProperties);
+    void Serialize(Utf8JsonWriter writer, string category, LogLevel logLevel, int threadId, string message, Exception? exception, IEnumerable<KeyValuePair<string, object?>>? eventProperties);
 }
