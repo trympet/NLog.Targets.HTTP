@@ -1,7 +1,7 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFrameworks>net7.0</TargetFrameworks>
+    <TargetFrameworks>net8.0</TargetFrameworks>
     <Title>NLog.Targets.Http</Title>
     <Description>An NLog target for Http log entries submission (works wih Splunk HEC)</Description>
     <Authors>Dariusz Danielewski, Stan Smith and Julian Verdurmen</Authors>
@@ -14,42 +14,13 @@
     <RepositoryType>git</RepositoryType>
     <RepositoryUrl>git://github.com/DarekDan/NLog.Targets.HTTP</RepositoryUrl>
     <Version>1.0.2</Version>
-	  <Nullable>enable</Nullable>
-    <PackageReleaseNotes>Version 1.0.2
-- minor performance improvements
-- code refactoring
-- updated documentation
-- sample command-line app for code profiling
-Version 1.0.1
-- Refactored for a single HttpClient as HttpWebRequest was creating too many connection in TIMED_WAIT state under load.
-- Upgraded .Net Standard to 2.1 and introduced support for Core 3.0 and Framework 4.8
-Version 1.0.0
-- Official release
-Version 0.0.8
-- added support for Nagle algorithm.
-Version 0.0.7
-- pulling default properties from ServicePointManager
-Version 0.0.6
-- switching to default properties and changing behavior only of the selected ServicePoint
-Version 0.0.5
-- code flow optimizations
-Version 0.0.4
-- Changed Expect100Continue to the default value of true
-Version 0.0.3
-- Added support for proxy server configuration.
-Version 0.0.2
-- Thanks to Alan Barber (https://github.com/AlanBarber) for NuGet build scripts and inspiration for this Http Target (his Splunk target https://github.com/AlanBarber/NLog.Targets.Splunk).
-- Thanks to Nate McMaster (https://natemcmaster.com/blog/2017/03/09/vs2015-to-vs2017-upgrade/) and Derek Comartin (https://codeopinion.com/converting-a-library-to-netstandard/) for conversion tips.
-Version 0.0.1
-- Big thanks to Stan Smith for insiting to make it lean and performant.
-- First publish to NuGet.
-</PackageReleaseNotes>    
+	  <Nullable>enable</Nullable> 
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
   </PropertyGroup>
 
   <!--common NuGet package refs -->
   <ItemGroup>
-    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0.0-rc.2.23479.6" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="8.*" />
   </ItemGroup>
 
 </Project>
