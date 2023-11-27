@@ -12,26 +12,23 @@ using System.Threading.Tasks;
 
 namespace NLog.Targets.Http;
 
-public sealed partial class HttpLogger : IDisposable
+public sealed class HttpLogger : IDisposable
 {
     private readonly HttpClient _httpClient;
-    private readonly ILogMessage _logMessage;
-    private State _state;
-    private Task _worker;
+    private readonly State _state;
+    private Task? _worker;
     private HttpStatusCode _phaseStatus;
     private string? _tempDir;
 
     public HttpLogger(HttpMessageHandler messageHandler, ILogMessage logMessage)
     {
-        _state = new(this);
-        _worker = Worker(_state.Cts.Token);
         _httpClient = new HttpClient(messageHandler);
-        _logMessage = logMessage;
+        _state = new();
+        LogMessage = logMessage;
+        _worker = Worker(_state.Token);
     }
 
-    public static EventHandler<FlushErrorEventArgs>? FlushError;
-
-    public HttpClient HttpClient => _httpClient;
+    public static event EventHandler<FlushErrorEventArgs>? FlushError;
 
     public Uri? Url
     {
@@ -71,40 +68,99 @@ public sealed partial class HttpLogger : IDisposable
 
     internal object TempFileLock { get; } = new object();
 
+    internal State State => _state;
+
+    internal ILogMessage LogMessage { get; }
+
     public void Dispose()
     {
+        var worker = _worker;
+        if (worker is null)
+        {
+            return;
+        }
+
+        worker = Interlocked.CompareExchange(ref _worker, null, worker);
+        if (worker is null)
+        {
+            return;
+        }
+
         _state.Cts.Cancel();
+        try
+        {
+            worker.GetAwaiter().GetResult();
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (ObjectDisposedException)
+        {
+            Debug.Fail("Unreachable.");
+        }
+
+        _httpClient.Dispose();
+        _state.Dispose();
+
         if (TempFile != null)
         {
-            File.Delete(TempFile);
+            try
+            {
+                File.Delete(TempFile);
+            }
+            catch (Exception)
+            {
+                // Best effort.
+                Debug.Fail("Failed to delete temp file.");
+            }
         }
     }
 
-    public void Log<TState>(string category, LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+    public void Log<TState>(string category, LogLevel logLevel, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
     {
-        var workItem = new SerializableLogEvent(this, category, logLevel, eventId, Environment.CurrentManagedThreadId, exception, formatter(state, exception), state as IEnumerable<KeyValuePair<string, object?>>);
-        ThreadPool.UnsafeQueueUserWorkItem(workItem, false);
+        if (_worker is not null)
+        {
+            var workItem = LogEvent.Create(this, category, logLevel, Environment.CurrentManagedThreadId, exception, formatter(state, exception), state as IEnumerable<KeyValuePair<string, object?>>);
+            ThreadPool.UnsafeQueueUserWorkItem(workItem, false);
+        }
+        else
+        {
+            Trace.TraceWarning($"Log message after dispose: {formatter(state, exception)}");
+        }
     }
 
     public async Task FlushAsync(TimeSpan timeout)
     {
-        Debug.Assert(_state != null);
-        var tcs = new TaskCompletionSource<bool>();
-        ThreadPool.UnsafeRegisterWaitForSingleObject(
-            _state.PhaseComplete,
-            static (x, timedOut) => ((TaskCompletionSource<bool>)x!).SetResult(timedOut),
-            tcs,
-            timeout,
-            executeOnlyOnce: true
-        );
-
-        // Complete 1 phase
-        for (int i = 0; i < BatchSize; i++)
+        bool timedOut = true;
+        try
         {
-            _state.PendingMessages.Release();
+            var tcs = new TaskCompletionSource<bool>();
+            ThreadPool.UnsafeRegisterWaitForSingleObject(
+                _state.PhaseComplete,
+                static (x, timedOut) => ((TaskCompletionSource<bool>)x!).SetResult(timedOut),
+                tcs,
+                timeout,
+                executeOnlyOnce: true
+            );
+
+            // Complete 1 phase
+            for (int i = 0; i < BatchSize; i++)
+            {
+                _state.PendingMessages.Release();
+            }
+
+            timedOut = await tcs.Task.ConfigureAwait(false);
+        }
+        catch (ObjectDisposedException)
+        {
+            // We're shutting down.
+        }
+        catch (Exception)
+        {
+            Debug.Fail("Unhandled error during flush.");
+            timedOut = true;
         }
 
-        bool timedOut = await tcs.Task.ConfigureAwait(false);
         if (timedOut || _phaseStatus != HttpStatusCode.OK)
         {
             var sb = new StringBuilder();
@@ -197,13 +253,13 @@ public sealed partial class HttpLogger : IDisposable
         HttpStatusCode result = HttpStatusCode.BadRequest;
         try
         {
-            using var request = new HttpRequestMessage
+            using var request = new HttpRequestMessage(HttpMethod.Post, requestUri: default(Uri))
             {
-                Version = new Version(2, 0),
+                Version = HttpVersion.Version20,
                 Content = InMemoryCompression ? new CompressedMemoryStreamContent(head, length) : new MemoryStreamContent(head, length),
             };
 
-            using var httpResponseMessage = await _httpClient!.SendAsync(request, cancellationToken).ConfigureAwait(false);
+            using var httpResponseMessage = await _httpClient!.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
             result = httpResponseMessage.StatusCode;
         }
         catch (HttpRequestException)
@@ -242,20 +298,29 @@ public sealed partial class HttpLogger : IDisposable
 
         return head;
     }
+}
 
-    private sealed class State
+internal sealed class State : IDisposable
+{
+    internal readonly ConcurrentBag<LogEvent> Messages = new();
+    internal readonly CancellationTokenSource Cts = new();
+    internal readonly CancellationToken Token;
+    /// <summary>
+    /// Signals any pending messages.
+    /// </summary>
+    internal readonly Semaphore PendingMessages;
+    internal readonly AutoResetEvent PhaseComplete;
+    public State()
     {
-        internal readonly ConcurrentBag<LogEvent> Messages = new();
-        internal readonly CancellationTokenSource Cts = new();
-        /// <summary>
-        /// Signals any pending messages.
-        /// </summary>
-        internal readonly Semaphore PendingMessages;
-        internal readonly AutoResetEvent PhaseComplete;
-        public State(HttpLogger http)
-        {
-            PendingMessages = new Semaphore(0, int.MaxValue);
-            PhaseComplete = new AutoResetEvent(false);
-        }
+        PendingMessages = new Semaphore(0, int.MaxValue);
+        PhaseComplete = new AutoResetEvent(false);
+        Token = Cts.Token;
+    }
+
+    public void Dispose()
+    {
+        Cts.Dispose();
+        PendingMessages.Dispose();
+        PhaseComplete.Dispose();
     }
 }
