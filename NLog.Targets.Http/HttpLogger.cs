@@ -86,30 +86,33 @@ public sealed partial class HttpLogger : IDisposable
         ThreadPool.UnsafeQueueUserWorkItem(workItem, false);
     }
 
-    public async Task FlushAsync()
+    public async Task FlushAsync(TimeSpan timeout)
     {
         Debug.Assert(_state != null);
-        var tcs = new TaskCompletionSource();
+        var tcs = new TaskCompletionSource<bool>();
         ThreadPool.UnsafeRegisterWaitForSingleObject(
             _state.PhaseComplete,
-            static (x, _) => ((TaskCompletionSource)x!).SetResult(),
+            static (x, timedOut) => ((TaskCompletionSource<bool>)x!).SetResult(timedOut),
             tcs,
-            millisecondsTimeOutInterval: -1,
+            timeout,
             executeOnlyOnce: true
         );
+
         // Complete 1 phase
         for (int i = 0; i < BatchSize; i++)
         {
             _state.PendingMessages.Release();
         }
-        await tcs.Task;
-        if (_phaseStatus != HttpStatusCode.OK)
+
+        bool timedOut = await tcs.Task.ConfigureAwait(false);
+        if (timedOut || _phaseStatus != HttpStatusCode.OK)
         {
             var sb = new StringBuilder();
             while (_state.Messages.TryTake(out var message))
             {
                 sb.Append(message.GetMessage());
             }
+
             FlushError?.Invoke(this, new(sb.ToString()));
         }
     }
