@@ -197,7 +197,7 @@ internal abstract class LogEvent : IThreadPoolWorkItem
                 });
                 byte[] buffer = new byte[count];
                 stream.Position = offset;
-                stream.Read(buffer);
+                _ = stream.Read(buffer);
                 return buffer;
             }
             catch (Exception)

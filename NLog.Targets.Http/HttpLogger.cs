@@ -22,7 +22,7 @@ public sealed class HttpLogger : IDisposable
 
     public HttpLogger(HttpMessageHandler messageHandler, ILogMessage logMessage)
     {
-        _httpClient = new HttpClient(messageHandler);
+        _httpClient = new HttpClient(messageHandler, false);
         _state = new();
         LogMessage = logMessage;
         _worker = Worker(_state.Token);
@@ -94,9 +94,9 @@ public sealed class HttpLogger : IDisposable
         catch (OperationCanceledException)
         {
         }
-        catch (ObjectDisposedException)
+        catch (ObjectDisposedException ex)
         {
-            Debug.Fail("Unreachable.");
+            Debug.Fail("Unreachable", ex.ToString());
         }
 
         _httpClient.Dispose();
@@ -121,7 +121,7 @@ public sealed class HttpLogger : IDisposable
         if (_worker is not null)
         {
             var workItem = LogEvent.Create(this, category, logLevel, Environment.CurrentManagedThreadId, exception, formatter(state, exception), state as IEnumerable<KeyValuePair<string, object?>>);
-            ThreadPool.UnsafeQueueUserWorkItem(workItem, false);
+            _ = ThreadPool.UnsafeQueueUserWorkItem(workItem, false);
         }
         else
         {
@@ -135,7 +135,7 @@ public sealed class HttpLogger : IDisposable
         try
         {
             var tcs = new TaskCompletionSource<bool>();
-            ThreadPool.UnsafeRegisterWaitForSingleObject(
+            _ = ThreadPool.UnsafeRegisterWaitForSingleObject(
                 _state.PhaseComplete,
                 static (x, timedOut) => ((TaskCompletionSource<bool>)x!).SetResult(timedOut),
                 tcs,
@@ -146,7 +146,7 @@ public sealed class HttpLogger : IDisposable
             // Complete 1 phase
             for (int i = 0; i < BatchSize; i++)
             {
-                _state.PendingMessages.Release();
+                _ = _state.PendingMessages.Release();
             }
 
             timedOut = await tcs.Task.ConfigureAwait(false);
@@ -166,7 +166,7 @@ public sealed class HttpLogger : IDisposable
             var sb = new StringBuilder();
             while (_state.Messages.TryTake(out var message))
             {
-                sb.Append(message.GetMessage());
+                _ = sb.Append(message.GetMessage());
             }
 
             FlushError?.Invoke(this, new(sb.ToString()));
