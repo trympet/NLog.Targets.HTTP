@@ -265,8 +265,13 @@ public sealed class HttpLogger : IDisposable
         catch (HttpRequestException)
         {
         }
-        catch (TaskCanceledException)
+        catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
+            // Swallow cancellations if cancellation isn't signaled.
+        }
+        catch (ObjectDisposedException ex) when (cancellationToken.IsCancellationRequested)
+        {
+            throw new OperationCanceledException("Underlying handler disposed", ex, cancellationToken);
         }
         finally
         {
