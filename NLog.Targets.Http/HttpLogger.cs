@@ -94,9 +94,10 @@ public sealed class HttpLogger : IDisposable
         catch (OperationCanceledException)
         {
         }
-        catch (ObjectDisposedException ex)
+        catch (ObjectDisposedException)
         {
-            Debug.Fail("Unreachable", ex.ToString());
+            // HTTP handler disposed, but we're not.
+            Trace.TraceWarning($"Dispose {nameof(HttpLogger)} before underlying handler.");
         }
 
         _httpClient.Dispose();
