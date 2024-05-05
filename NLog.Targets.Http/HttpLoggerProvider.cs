@@ -1,7 +1,7 @@
-﻿using Microsoft.Extensions.Logging;
 using System;
 using System.Net.Http;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
 
 namespace NLog.Targets.Http;
 
@@ -12,8 +12,8 @@ public sealed class HttpLoggerProvider : ILoggerProvider
     private HttpLoggerProvider(HttpLogger logger, LogLevel minLevel, LogLevel maxLevel)
     {
         this.logger = logger;
-        this.MinLevel = minLevel;
-        this.MaxLevel = maxLevel;
+        MinLevel = minLevel;
+        MaxLevel = maxLevel;
     }
     public LogLevel MinLevel { get; set; }
 
@@ -41,7 +41,7 @@ public sealed class HttpLoggerProvider : ILoggerProvider
         logger.Dispose();
     }
 
-    public bool IsEnabled(LogLevel logLevel) => this.MinLevel <= logLevel && logLevel <= this.MaxLevel;
+    public bool IsEnabled(LogLevel logLevel) => MinLevel <= logLevel && logLevel <= MaxLevel;
 
     private sealed class Logger : ILogger
     {

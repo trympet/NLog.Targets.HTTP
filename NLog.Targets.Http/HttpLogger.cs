@@ -1,4 +1,3 @@
-﻿using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -9,6 +8,7 @@ using System.Net.Http;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
 
 namespace NLog.Targets.Http;
 
@@ -224,7 +224,7 @@ public sealed class HttpLogger : IDisposable
                 phaseDuration.Reset();
                 pendingCount = 0;
                 _phaseStatus = await SendAndConsumeMessages(cancellationToken);
-                _state!.PhaseComplete.Set();
+                _ = _state!.PhaseComplete.Set();
                 switch (_phaseStatus)
                 {
                     case HttpStatusCode.OK:
@@ -249,7 +249,9 @@ public sealed class HttpLogger : IDisposable
     {
         var head = GetMemorySequence(out var length);
         if (head == null)
+        {
             return HttpStatusCode.OK;
+        }
 
         HttpStatusCode result = HttpStatusCode.BadRequest;
         try
