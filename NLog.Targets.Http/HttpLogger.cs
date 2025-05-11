@@ -310,7 +310,7 @@ public sealed class HttpLogger : IDisposable
 
 internal sealed class State : IDisposable
 {
-    internal readonly ConcurrentBag<LogEvent> Messages = new();
+    internal readonly ConcurrentBag<LogEvent> Messages = [];
     internal readonly CancellationTokenSource Cts = new();
     internal readonly CancellationToken Token;
     /// <summary>

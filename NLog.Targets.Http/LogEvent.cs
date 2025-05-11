@@ -202,7 +202,7 @@ internal abstract class LogEvent : IThreadPoolWorkItem
             }
             catch (Exception)
             {
-                return Array.Empty<byte>();
+                return [];
             }
         }
 
