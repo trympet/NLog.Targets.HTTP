@@ -10,7 +10,8 @@ internal sealed class CompressedMemoryStreamContent : MemoryStreamContent
 {
     private BrotliDecoder decoder;
 
-    public CompressedMemoryStreamContent(ReadOnlySequenceSegment<byte> memorySequence, int length) : base(memorySequence, length)
+    public CompressedMemoryStreamContent(ReadOnlySequenceSegment<byte> memorySequence, int length)
+        : base(memorySequence, length)
     {
     }
 

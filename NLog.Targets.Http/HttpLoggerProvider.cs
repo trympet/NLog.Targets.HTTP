@@ -15,8 +15,8 @@ public sealed class HttpLoggerProvider : ILoggerProvider
         MinLevel = minLevel;
         MaxLevel = maxLevel;
     }
-    public LogLevel MinLevel { get; set; }
 
+    public LogLevel MinLevel { get; set; }
     public LogLevel MaxLevel { get; set; }
 
     public static HttpLoggerProvider Create(HttpMessageHandler httpMessageHandler, ILogMessage logMessage, LogLevel minLevel, LogLevel maxLevel = LogLevel.Critical)

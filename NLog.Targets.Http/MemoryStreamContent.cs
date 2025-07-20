@@ -81,6 +81,7 @@ internal class MemoryStreamContent : HttpContent
                 source = source[bytesConsumed..];
                 buffer = buffer[bytesWritten..];
             }
+
             Next();
         }
 

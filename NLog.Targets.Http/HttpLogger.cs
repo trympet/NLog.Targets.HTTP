@@ -46,7 +46,6 @@ public sealed class HttpLogger : IDisposable
     public bool InMemoryCompression { get; set; } = true;
     public int MessagePollInterval { get; set; } = 3000;
     public int TooManyRequestsTimeout { get; set; } = 750;
-
     public int BatchSize { get; set; } = 64;
 
     /// <summary>
@@ -65,11 +64,8 @@ public sealed class HttpLogger : IDisposable
     }
 
     internal string? TempFile { get; set; }
-
     internal object TempFileLock { get; } = new object();
-
     internal State State => _state;
-
     internal ILogMessage LogMessage { get; }
 
     public void Dispose()
@@ -210,6 +206,7 @@ public sealed class HttpLogger : IDisposable
                     throw;
                 }
             }
+
             if (pendingCount == 0)
             {
                 // start of phase.
@@ -245,6 +242,7 @@ public sealed class HttpLogger : IDisposable
             }
         }
     }
+
     private async Task<HttpStatusCode> SendAndConsumeMessages(CancellationToken cancellationToken)
     {
         var head = GetMemorySequence(out var length);
@@ -313,11 +311,13 @@ internal sealed class State : IDisposable
     internal readonly ConcurrentBag<LogEvent> Messages = [];
     internal readonly CancellationTokenSource Cts = new();
     internal readonly CancellationToken Token;
+
     /// <summary>
     /// Signals any pending messages.
     /// </summary>
     internal readonly Semaphore PendingMessages;
     internal readonly AutoResetEvent PhaseComplete;
+
     public State()
     {
         PendingMessages = new Semaphore(0, int.MaxValue);

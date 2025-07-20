@@ -51,6 +51,7 @@ internal sealed class ValueTaskSource<T> : IValueTaskSource<T>
                 _stopping = true;
             }
         }
+
         if (completeTask)
         {
             _mrvtsc.SetException(ExceptionDispatchInfo.SetCurrentStackTrace(new OperationCanceledException(cancellationToken)));

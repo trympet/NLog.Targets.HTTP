@@ -21,11 +21,8 @@ internal abstract class LogEvent : IThreadPoolWorkItem
     }
 
     public virtual Memory<byte> Data { get; private set; }
-
     public int UncompressedSize { get; set; }
-
     private protected HttpLogger HttpLogger { get; }
-
     private State State => HttpLogger.State!;
 
     public static LogEvent Create(HttpLogger http, string category, LogLevel logLevel, int threadId, Exception? exception, string message, IEnumerable<KeyValuePair<string, object?>>? eventProperties)
@@ -39,6 +36,7 @@ internal abstract class LogEvent : IThreadPoolWorkItem
         {
             return Encoding.UTF8.GetString(Data.Span);
         }
+
         Span<byte> result = new byte[UncompressedSize];
         Span<byte> buffer = result;
         int totalWritten = 0;
@@ -61,12 +59,14 @@ internal abstract class LogEvent : IThreadPoolWorkItem
         try
         {
             using var ms = new MemoryStream();
-            using var writer = new Utf8JsonWriter(ms, new JsonWriterOptions
-            {
+            using var writer = new Utf8JsonWriter(
+                ms,
+                new JsonWriterOptions
+                {
 #if !DEBUG
                 SkipValidation = true
 #endif
-            });
+                });
             // TODO: to json in sb
             Serialize(writer);
             writer.Flush();
@@ -80,6 +80,7 @@ internal abstract class LogEvent : IThreadPoolWorkItem
                     var didCompress = encoder.Compress(input.AsSpan(..UncompressedSize), input, out _, out count, true);
                     Debug.Assert(didCompress is OperationStatus.Done or OperationStatus.NeedMoreData);
                 }
+
                 Data = input.AsMemory(0, count);
             }
 
@@ -97,6 +98,7 @@ internal abstract class LogEvent : IThreadPoolWorkItem
                     Debug.Fail(e.Message);
                 }
             }
+
             State.Messages.Add(message);
             State.PendingMessages.Release();
         }
@@ -121,7 +123,8 @@ internal abstract class LogEvent : IThreadPoolWorkItem
         private readonly IEnumerable<KeyValuePair<string, object?>>? eventProperties;
         private readonly string message;
 
-        public SerializableLogEvent(HttpLogger http, string category, LogLevel logLevel, int threadId, Exception? exception, string message, IEnumerable<KeyValuePair<string, object?>>? eventProperties) : base(http)
+        public SerializableLogEvent(HttpLogger http, string category, LogLevel logLevel, int threadId, Exception? exception, string message, IEnumerable<KeyValuePair<string, object?>>? eventProperties)
+            : base(http)
         {
             this.category = category;
             this.logLevel = logLevel;
@@ -167,17 +170,20 @@ internal abstract class LogEvent : IThreadPoolWorkItem
             int offset;
             lock (truncateLock)
             {
-                stream = File.Open(file, new FileStreamOptions
-                {
-                    BufferSize = data.Length,
-                    Access = FileAccess.Write,
-                    Mode = FileMode.Append,
-                    Options = FileOptions.Asynchronous,
-                    Share = FileShare.ReadWrite,
-                });
+                stream = File.Open(
+                    file,
+                    new FileStreamOptions
+                    {
+                        BufferSize = data.Length,
+                        Access = FileAccess.Write,
+                        Mode = FileMode.Append,
+                        Options = FileOptions.Asynchronous,
+                        Share = FileShare.ReadWrite,
+                    });
                 offset = (int)stream.Length;
                 stream.SetLength(stream.Length + data.Length);
             }
+
             await stream.WriteAsync(data, cancellationToken);
             stream.Dispose();
             return offset;
@@ -187,14 +193,16 @@ internal abstract class LogEvent : IThreadPoolWorkItem
         {
             try
             {
-                using var stream = File.Open(file, new FileStreamOptions
-                {
-                    BufferSize = 0,
-                    Access = FileAccess.Read,
-                    Mode = FileMode.Open,
-                    Share = FileShare.ReadWrite,
-                    Options = FileOptions.RandomAccess
-                });
+                using var stream = File.Open(
+                    file,
+                    new FileStreamOptions
+                    {
+                        BufferSize = 0,
+                        Access = FileAccess.Read,
+                        Mode = FileMode.Open,
+                        Share = FileShare.ReadWrite,
+                        Options = FileOptions.RandomAccess
+                    });
                 byte[] buffer = new byte[count];
                 stream.Position = offset;
                 _ = stream.Read(buffer);
