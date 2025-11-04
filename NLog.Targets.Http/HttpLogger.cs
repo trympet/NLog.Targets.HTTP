@@ -118,7 +118,7 @@ public sealed class HttpLogger : IDisposable
         if (_worker is not null)
         {
             var workItem = LogEvent.Create(this, category, logLevel, Environment.CurrentManagedThreadId, exception, formatter(state, exception), state as IEnumerable<KeyValuePair<string, object?>>);
-            _ = ThreadPool.UnsafeQueueUserWorkItem(workItem, false);
+            workItem.Execute();
         }
         else
         {

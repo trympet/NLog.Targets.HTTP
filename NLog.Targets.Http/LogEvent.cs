@@ -58,7 +58,7 @@ internal abstract class LogEvent : IThreadPoolWorkItem
     {
         try
         {
-            using var ms = new MemoryStream();
+            var ms = new ArrayBufferWriter<byte>();
             using var writer = new Utf8JsonWriter(
                 ms,
                 new JsonWriterOptions
@@ -70,18 +70,23 @@ internal abstract class LogEvent : IThreadPoolWorkItem
             // TODO: to json in sb
             Serialize(writer);
             writer.Flush();
-            ms.Capacity += 128;
-            using var encoder = new BrotliEncoder();
             {
-                int count = UncompressedSize += (int)ms.Length;
-                var input = ms.GetBuffer();
+                int count = UncompressedSize += (int)ms.WrittenCount;
+                ms.ResetWrittenCount();
+                var input = ms.GetMemory().Slice(0, UncompressedSize);
                 if (HttpLogger.InMemoryCompression)
                 {
-                    var didCompress = encoder.Compress(input.AsSpan(..UncompressedSize), input, out _, out count, true);
-                    Debug.Assert(didCompress is OperationStatus.Done or OperationStatus.NeedMoreData);
+                    // need room for the brotli header
+                    if (ms.FreeCapacity < 128)
+                    {
+                        ms.Advance(128 + ms.FreeCapacity);
+                        Debug.Assert(ms.Capacity >= 128);
+                    }
+                    var didCompress = BrotliEncoder.TryCompress(input.Span[..UncompressedSize], input.Span, out count);
+                    Debug.Assert(didCompress);
                 }
 
-                Data = input.AsMemory(0, count);
+                Data = input.Slice(0, count);
             }
 
             var message = this;
