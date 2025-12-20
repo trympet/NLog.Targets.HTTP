@@ -1,6 +1,8 @@
 using System;
 using System.Buffers;
+using System.Diagnostics;
 using System.IO;
+using System.IO.Pipelines;
 using System.Net;
 using System.Net.Http;
 using System.Text;
@@ -9,10 +11,9 @@ using System.Threading.Tasks;
 
 namespace NLog.Targets.Http;
 
-internal class MemoryStreamContent : HttpContent
+internal sealed class MemoryStreamContent : HttpContent
 {
     private readonly int _length;
-    private long _consumed;
     private ReadOnlySequenceSegment<byte>? memorySequence;
 
     public MemoryStreamContent(ReadOnlySequenceSegment<byte> memorySequence, int length)
@@ -38,22 +39,30 @@ internal class MemoryStreamContent : HttpContent
 
     protected sealed override async Task SerializeToStreamAsync(Stream stream, TransportContext? context, CancellationToken cancellationToken)
     {
-        byte[] buffer = ArrayPool<byte>.Shared.Rent(Math.Min(81920, _length));
-        try
+        // Make sure not to get to the Large Object Heap.
+        const int LohSizeLimit = 81920;
+        int bufferSize = Math.Min(LohSizeLimit, _length);
+        var writer = System.IO.Pipelines.PipeWriter.Create(stream, new(minimumBufferSize: bufferSize, leaveOpen: true));
+
+        int written = 0;
+        while (memorySequence != null)
         {
-            int bytesRead;
-            while ((bytesRead = Read(buffer)) != 0)
+            var memory = memorySequence.Memory;
+            Debug.Assert(written + memory.Length <= _length);
+            var r = await WriteCore(writer, memory, cancellationToken).ConfigureAwait(false);
+            if (r.IsCanceled)
             {
-#if DEBUG
-                var debug = Encoding.UTF8.GetString(new Span<byte>(buffer, 0, bytesRead));
-#endif
-                await stream.WriteAsync(new ReadOnlyMemory<byte>(buffer, 0, bytesRead), cancellationToken).ConfigureAwait(false);
+                return;
             }
+
+            written += memory.Length;
+            Debug.Assert(written <= _length);
+
+            Next();
         }
-        finally
-        {
-            ArrayPool<byte>.Shared.Return(buffer);
-        }
+
+        _ = await writer.FlushAsync(cancellationToken).ConfigureAwait(false);
+
     }
 
     protected sealed override Task SerializeToStreamAsync(Stream stream, TransportContext? context)
@@ -67,34 +76,9 @@ internal class MemoryStreamContent : HttpContent
         return true;
     }
 
-    private int Read(Span<byte> buffer)
-    {
-        int written = 0;
-        while (memorySequence != null && buffer.Length > 0)
-        {
-            var source = memorySequence.Memory.Span[(int)(_consumed - memorySequence.RunningIndex)..];
-            while (source.Length > 0)
-            {
-                ReadCore(buffer, source, out var bytesWritten, out var bytesConsumed);
-                _consumed += bytesConsumed;
-                written += bytesWritten;
-                source = source[bytesConsumed..];
-                buffer = buffer[bytesWritten..];
-            }
+    private static ValueTask<FlushResult> WriteCore(PipeWriter writer, ReadOnlyMemory<byte> memory, CancellationToken cancellationToken) => writer.WriteAsync(memory, cancellationToken);
 
-            Next();
-        }
-
-        return written;
-    }
-
-    protected virtual void ReadCore(Span<byte> buffer, ReadOnlySpan<byte> source, out int bytesWritten, out int bytesConsumed)
-    {
-        source.CopyTo(buffer);
-        bytesConsumed = bytesWritten = Math.Min(source.Length, buffer.Length);
-    }
-
-    protected virtual void Next()
+    private void Next()
     {
         memorySequence = memorySequence?.Next;
     }

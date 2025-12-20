@@ -20,7 +20,7 @@ internal abstract class LogEvent : IThreadPoolWorkItem
         HttpLogger = http;
     }
 
-    public virtual Memory<byte> Data { get; private set; }
+    public virtual ReadOnlyMemory<byte> Data { get; private set; }
     public int UncompressedSize { get; set; }
     private protected HttpLogger HttpLogger { get; }
     private State State => HttpLogger.State!;
@@ -71,22 +71,8 @@ internal abstract class LogEvent : IThreadPoolWorkItem
             Serialize(writer);
             writer.Flush();
             {
-                int count = UncompressedSize += (int)ms.WrittenCount;
-                ms.ResetWrittenCount();
-                var input = ms.GetMemory().Slice(0, UncompressedSize);
-                if (HttpLogger.InMemoryCompression)
-                {
-                    // need room for the brotli header
-                    if (ms.FreeCapacity < 128)
-                    {
-                        ms.Advance(128 + ms.FreeCapacity);
-                        Debug.Assert(ms.Capacity >= 128);
-                    }
-                    var didCompress = BrotliEncoder.TryCompress(input.Span[..UncompressedSize], input.Span, out count);
-                    Debug.Assert(didCompress);
-                }
-
-                Data = input.Slice(0, count);
+                UncompressedSize = (int)ms.WrittenCount;
+                Data = ms.WrittenMemory;
             }
 
             var message = this;
@@ -159,7 +145,7 @@ internal abstract class LogEvent : IThreadPoolWorkItem
             this.count = count;
         }
 
-        public override Memory<byte> Data => Read(path, offset, count);
+        public override ReadOnlyMemory<byte> Data => Read(path, offset, count);
 
         public static async Task<SerializedLogEvent> CreateAsync(LogEvent other, string filePath, object writeLock, CancellationToken cancellationToken)
         {
@@ -169,7 +155,7 @@ internal abstract class LogEvent : IThreadPoolWorkItem
             return new SerializedLogEvent(other.HttpLogger, filePath, (int)offset, data.Length);
         }
 
-        private static async Task<int> WriteAsync(string file, Memory<byte> data, object truncateLock, CancellationToken cancellationToken)
+        private static async Task<int> WriteAsync(string file, ReadOnlyMemory<byte> data, object truncateLock, CancellationToken cancellationToken)
         {
             FileStream stream;
             int offset;

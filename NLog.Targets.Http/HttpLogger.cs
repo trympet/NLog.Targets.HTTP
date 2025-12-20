@@ -257,7 +257,7 @@ public sealed class HttpLogger : IDisposable
             using var request = new HttpRequestMessage(HttpMethod.Post, requestUri: default(Uri))
             {
                 Version = HttpVersion.Version20,
-                Content = InMemoryCompression ? new CompressedMemoryStreamContent(head, length) : new MemoryStreamContent(head, length),
+                Content = new MemoryStreamContent(head, length),
             };
 
             using var httpResponseMessage = await _httpClient!.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
