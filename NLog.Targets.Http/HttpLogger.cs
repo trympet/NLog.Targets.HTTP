@@ -294,9 +294,14 @@ public sealed class HttpLogger : IDisposable
         MemorySequence? head = null;
         MemorySequence? sequence = null;
         length = 0;
-        int capacity = BatchSize;
-        while (_state!.Messages.TryTake(out var message) && capacity-- > 0)
+        var messages = _state!.Messages;
+        for (int i = 0; i < BatchSize; i++)
         {
+            if (!messages.TryTake(out var message))
+            {
+                break;
+            }
+
             Debug.Assert(message!.Data.Length > 0);
             sequence = new MemorySequence(message, sequence, ref head);
             length += message.UncompressedSize;

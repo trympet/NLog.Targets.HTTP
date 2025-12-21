@@ -21,7 +21,7 @@ internal abstract class LogEvent : IThreadPoolWorkItem
     }
 
     public virtual ReadOnlyMemory<byte> Data { get; private set; }
-    public int UncompressedSize { get; set; }
+    public int UncompressedSize { get; private set; }
     private protected HttpLogger HttpLogger { get; }
     private State State => HttpLogger.State!;
 
@@ -82,6 +82,7 @@ internal abstract class LogEvent : IThreadPoolWorkItem
                 try
                 {
                     message = await SerializedLogEvent.CreateAsync(this, HttpLogger.TempFile, HttpLogger.TempFileLock, State.Cts.Token);
+                    message.UncompressedSize = (int)ms.WrittenCount;
                 }
                 catch (Exception e)
                 {
