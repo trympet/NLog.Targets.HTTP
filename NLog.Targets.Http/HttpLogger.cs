@@ -245,7 +245,7 @@ public sealed class HttpLogger : IDisposable
 
     private async Task<HttpStatusCode> SendAndConsumeMessages(CancellationToken cancellationToken)
     {
-        var head = GetMemorySequence(out var length);
+        var head = GetMemorySequence(out _);
         if (head == null)
         {
             return HttpStatusCode.OK;
@@ -257,9 +257,8 @@ public sealed class HttpLogger : IDisposable
             using var request = new HttpRequestMessage(HttpMethod.Post, requestUri: default(Uri))
             {
                 Version = HttpVersion.Version20,
-                Content = new MemoryStreamContent(head, length),
+                Content = new StreamContent(new ReadOnlySequenceSegmentStream(head)),
             };
-
             using var httpResponseMessage = await _httpClient!.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
             result = httpResponseMessage.StatusCode;
         }
